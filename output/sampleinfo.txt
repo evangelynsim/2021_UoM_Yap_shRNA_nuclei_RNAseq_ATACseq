@@ -1,0 +1,7 @@
+"SampleName"	"group"
+"Lacz.1"	"Lacz"
+"Lacz.2"	"Lacz"
+"Lacz.3"	"Lacz"
+"Yap.1"	"Yap"
+"Yap.2"	"Yap"
+"Yap.3"	"Yap"
