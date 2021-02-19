@@ -1,0 +1,235 @@
+---
+title: "EdgeR, MA plot and Peak Annotation of nuclei ATAC-seq"
+author: "Evangelyn Sim"
+date: "2/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+## Introduction
+
+In the GEO submission 1 processed files were uploaded. 
+
+1. mouseATAC_peaks_cov2.bed.saf.pe.mx.fix_filt
+
+They have been uploaded in the /output folder and will be used below to generate different figures.
+
+
+
+### Used libraries and functions
+
+```{r}
+library(edgeR)
+library(limma)
+library(dplyr)
+
+library(ggplot2)
+library(moonBook)
+library(webr)
+library(waffle)
+library(extrafont)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(ggpubr)
+
+```
+
+
+# 1. EdgeR
+
+### Read files 
+```{r}
+
+PRIOR = 20
+FDR = 0.01
+
+rm1 <- read.delim("/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/Github/2021_UoM_Yap_shRNA_nuclei_RNAseq_ATACseq/output/mouseATAC_peaks_cov2.bed.saf.pe.mx.fix_filt", header = TRUE, row.names = 1)
+matrix = rm1[,c(1:6)]
+
+phenoN = data.frame(colnames(matrix))
+colnames(phenoN) = "sampleN"
+
+phenoN$sample = gsub(".[0-9]", "", phenoN$sampleN)
+
+pheno = data.frame(phenoN[,c(2)])
+colnames(pheno) =  "sample"
+
+
+write.table(pheno, file="/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/Github/2021_UoM_Yap_shRNA_nuclei_RNAseq_ATACseq/output/pheno.matrix_cov2.txt", sep="\t", quote = F, row.names = F)
+pheno = read.delim(file="/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/Github/2021_UoM_Yap_shRNA_nuclei_RNAseq_ATACseq/output/pheno.matrix_cov2.txt")
+
+########################################################################################################
+
+attach(pheno)
+design = model.matrix(as.formula("~ 0  + sample"))
+detach(pheno)
+design
+
+D = DGEList(counts=matrix)
+D = calcNormFactors(D)
+D = estimateGLMCommonDisp(D, design)
+D = estimateGLMTagwiseDisp(D, design, prior.df = PRIOR)
+fit = glmFit(D, design, prior.count = PRIOR)
+
+Contrast = makeContrasts(atac_cov2_LacZvsYap = sampleYap - sampleLacz,
+                         levels=design)
+
+res = list()
+contrast.name = colnames(Contrast)
+
+for(i in 1:length(contrast.name)){
+  lrt = glmLRT(fit, contrast = Contrast[,i])   
+  
+  results = lrt$table
+  disp = lrt$dispersion
+  fitted.vals = lrt$fitted.values
+  coefficients = lrt$coefficients
+  
+  results$adj.p.value = p.adjust(p = results$PValue, method = "fdr" )
+  table(row.names(results) == row.names(fitted.vals))
+  
+  Name = row.names(results)
+  res0 = cbind(Name, results, disp, fitted.vals, coefficients)
+  res[[i]] = res0[order(res0$adj.p.value),]
+  write.table(res[[i]], file= paste0("/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/Github/2021_UoM_Yap_shRNA_nuclei_RNAseq_ATACseq/output/edgeR_", contrast.name[i] ,".xls"), quote=F, sep="\t", col.names = T, row.names = F)
+  
+  
+  res[[i]]= mutate(res[[i]], cs= ifelse(res[[i]]$PValue <= 0.01 , "red", "black"))
+  
+  mxFDR = res[[i]][res[[i]]$PValue <= FDR,]
+  mxFDR_Up = mxFDR[mxFDR$logFC>0,]
+  mxFDR_Dn = mxFDR[mxFDR$logFC<0,]
+  
+  res[[i]]= mutate(res[[i]], FDR= nrow(mxFDR))
+  res[[i]]= mutate(res[[i]], FDRup= nrow(mxFDR_Up))
+  res[[i]]= mutate(res[[i]], FDRdn= nrow(mxFDR_Dn))
+
+}
+
+```
+
+
+# 2. MA plot of EdgeR result
+
+```{r, fig.height=5, fig.width= 5}
+
+par(mfrow=c(1,1))
+
+for(i in 1:length(contrast.name)){
+
+  plot(res[[i]]$logFC, -log10(res[[i]]$PValue), pch=20, cex=0.8, col=res[[i]]$cs, 
+       xlab = "LogFC", ylab = "-log10(PValue)",
+       main = paste0(contrast.name[i], 
+                      "\np<=0.01, N=", res[[i]][1,ncol(res[[i]])-2], 
+                      "\nUp=",res[[i]][1,ncol(res[[i]])-1],", Dn=",res[[i]][1,ncol(res[[i]])]))
+  grid(nx = NULL, ny = NULL, col = "blue", lty = "dotted")
+  
+  
+}
+
+```
+
+# 3. Genome Feature of Peaks Enriched in AAV6:lacZ-shRNA or AAV6:Yap-shRNA
+
+## Select peaks with p<=0.01
+
+    #!/bin/bash
+
+    set -x
+
+
+    #Create sets of foreground regions in bed format
+    for XLS in *xls ; do
+
+      UP=$XLS.up.bed
+      DN=$XLS.dn.bed
+
+     awk ' $5<0.01 && $2>0 {print $1"\t"$1}' $XLS \
+      | cut -d '_' -f2- | sed 's/:/\t/' | sed 's/-/\t/' \
+      | bedtools sort > $UP
+
+      awk ' $5<0.01 && $2<0 {print $1"\t"$1}' $XLS \
+      | cut -d '_' -f2- | sed 's/:/\t/' | sed 's/-/\t/' \
+      | bedtools sort > $DN
+    done
+
+    #Create a set of background regions from those not changing in any comparison
+    BG=$XLS.bg.bed
+    tail -qn +2 *xls \
+    | awk '$5>0.1 {print $1}' \
+    | sort | uniq -c \
+    | cut -d '_' -f2- | tr ':-' '\t' \
+    | bedtools sort > $BG
+
+
+## Homer annotate peaks
+    
+    #!/bin/bash
+    
+    set -x
+
+    REF=/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/refgenome/Mus_musculus.GRCm38.96.gtf
+
+    #PATH=$PATH:/group/card2/Evangelyn_Sim/NGS/app/homer/.//bin/
+
+    for BED in *.up.bed *.dn.bed ; do
+
+     OUT=$BED.homeranno.txt
+     annotatePeaks.pl $BED mm10 -gtf $REF -go go -annStats $BED.stats.txt > $OUT
+
+    done
+
+
+
+
+## Plot Homer peak annotation results
+
+```{r}
+
+files = list.files(path = "/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/20190530_ATAC_run1/R/2.pks/4.pkstats/", pattern = ".stats.txt", full.names = T)
+
+mx = lapply(files, read.delim, header=T)
+
+files
+
+for(i in 1:length(mx)){
+  
+  mxFDR = mx[[i]][c(1:5),]
+  #write.table(mxFDR,
+  #            file = paste0(gsub("./|.txt","",files[[i]]),".tidy.txt"),
+  #            col.names = T, row.names = F, sep = "\t")
+  
+}
+
+
+
+files1 = list.files(path = "/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/20190530_ATAC_run1/R/2.pks/4.pkstats/", pattern = ".stats.tidy.txt", full.names = T)
+
+mx1 = lapply(files1, read.delim, header=T)
+
+for(j in 1:length(mx1)){
+  
+  mx[[j]]=PieDonut(mx1[[j]],aes(Annotation,count=Number.of.peaks),r0=0.5,start=3*pi/2,labelpositionThreshold=0.1)
+  
+}
+
+
+```
+
+
+```{r, fig.height=5, fig.width=10}
+
+multi = arrangeGrob(mx[[1]],mx[[2]],
+                    ncol = 2, nrow = 1)
+plot = as_ggplot(multi)
+
+plot
+
+```

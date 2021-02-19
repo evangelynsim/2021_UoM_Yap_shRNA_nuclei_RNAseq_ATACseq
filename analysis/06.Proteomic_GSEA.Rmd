@@ -1,0 +1,186 @@
+---
+title: "GSEA of Proteomics"
+author: "Evangelyn Sim"
+date: "2/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+## Introduction
+
+Obtain Proteomics differential analysis outcome: YAP shRNA D28 Proteomics results_ES.txt
+
+
+
+### Used libraries and functions
+
+* java/1.8.0_66
+* parallel
+```{r}
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(cowplot)
+library(ggpubr)
+library(dplyr)
+
+```
+
+
+
+### Read files 
+```{r}
+
+name = read.delim("/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/20190531_RNA_run1/seqaln/rename/mrna_fulllen_pe_strrev.mx.chr", header = T, sep = "\t")
+name$Gene.names = gsub(".*_","",name$Geneid)
+name = name[,c(1,7)]
+
+prote = read.delim("/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/20190530_ATAC_run1/R/1.1kbpTSS/8.intersectwithproteomic/YAP shRNA D28 Proteomics results_ES.txt", header = T, sep = "\t")
+
+mg = merge(prote, name, by = "Gene.names")
+mg = mg[,c(21,2:20)]
+
+write.table(mg, file = "/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/Github/2021_UoM_Yap_shRNA_nuclei_RNAseq_ATACseq/output/YAP_shRNA_D28_Proteomics_results.xls", col.names = T, row.names = F, sep = "\t")
+
+
+```
+
+
+### Rank Genes and change mouse gene name to human homolog
+
+Following generated edgeR spreadsheet, use the logFC and p.Value to generate a rank score using the following scripts.
+
+rnkgenM2H.sh
+
+      #!/bin/bash
+
+      #Specify the input file
+      XLS=$1
+      #Specify the gene ID column
+      ID=$2
+      #Specify the fold change value column
+      FC=$3
+      #Specify the raw p-value column
+      P=$4
+      #Specify ortholog maping
+      ORTH=$5
+
+
+      RNK=${XLS}.rnk
+      HUM=${RNK}.hum.rnk
+
+      sed 1d $XLS | tr -d '"' \
+      | awk -v I=$ID -v F=$FC -v P=$P '{FS="\t"} {print $I, $F, $P}' \
+      | awk '$2!="NA" && $3!="NA"' \
+      | awk '{s=1} $2<0{s=-1} {print $1"\t"s*-1*log($3)/log(10)}' \
+      | sort -k2gr | sed 's/inf$/330/'> $RNK
+
+      sed 's/_/\t/' $RNK \
+      | sort -k 1b,1 \
+      | join -1 2 -2 1 $ORTH - \
+      | awk '{OFS="\t"} {print $0,$5*$5}' \
+      | sort -k6gr \
+      | awk '!arr[$4]++' \
+      | awk '{OFS="\t"} !arr[$3]++ {print $3,$5}' \
+      | sort -k2gr > $HUM
+
+
+
+
+Run rnkgenM2H.sh to generate .rnk files
+
+      #!/bin/bash
+      for XLS in *xls ; do
+         ./rnkgen.sh $XLS 1 5 6 mouse2human.txt.sort 1 2 3 ;
+      done
+
+
+### Run GSEA using ranked genes
+
+Subject the generated .rnk files along with .gmt file sand run the following scripts to perform gene set enrichment analysis. 
+
+Download gmt files from GSEA webpage
+http://www.gsea-msigdb.org/gsea/login.jsp;jsessionid=C4D3892651A8792A331D7B32E9D2269C
+
+rungsea.sh
+
+      #!/bin/bash
+
+      run_gsea(){
+      RNK=$1
+      GMT=$2
+      echo /group/card2/Evangelyn_Sim/NGS/app/gsea-3.0.jar $RNK $GMT
+      java -Xmx4096m -cp /group/card2/Evangelyn_Sim/NGS/app/gsea-3.0.jar xtools.gsea.GseaPreranked  \
+      -gmx $GMT -collapse false -mode Max_probe \
+      -norm meandiv -nperm 1000 -rnk $RNK -scoring_scheme classic \
+      -rpt_label ${RNK}.${GMT} -include_only_symbols true -make_sets true \
+      -plot_top_x 20 -rnd_seed timestamp -set_max 5000 -set_min 10 -zip_report false \
+      -out . -gui false
+      }
+      export -f run_gsea
+
+      parallel -j5 run_gsea ::: *rnk ::: *gmt
+
+
+### Parse GSEA outcome
+
+```{bash}
+#!/bin/bash
+echo 'GeneSetName	GeneSetSize	ES	NES	p-val	FDR	FWER' > header.txt
+
+for GSEADIR in `ls | grep GseaPreranked | grep -v xls$` ; do
+  awk '{FS="\t"} {OFS="\t"} $8<0.05 {print $1,$4,$5,$6,$7,$8,$9} ' $GSEADIR/gsea_report_for_na_*xls \
+  | cat header.txt - > $GSEADIR.xls
+done
+
+
+
+```
+
+
+### Plot GSEA result
+
+```{r}
+files = list.files(path = "/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/20190530_ATAC_run1/R/1.1kbpTSS/10.proteomic_gsea", pattern = ".*go.xls$", full.names = T)
+mx = lapply(files, read.delim, header=T)
+
+
+for(l in 1:length(mx)){
+  
+  mx[[l]]$GeneSetName = gsub("GO_", "", mx[[l]]$GeneSetName)
+  
+  mxRU= mx[[l]]
+  mxRU= mxRU[order(mxRU$NES, decreasing = T), ]
+  mxRU= mxRU[c(1:5),]
+  mxRU$colour = "blue"
+  
+  mxRD= mx[[l]]
+  mxRD= mxRD[order(mxRD$NES), ]
+  mxRD= mxRD[c(1:5),]
+  mxRD$colour = "red"
+  
+  ES_all = rbind(mxRU, mxRD)
+  
+}
+```
+
+
+```{r, fig.height=6, fig.width= 15}
+
+par(las =2)
+par(mar=c(3,55,5,2))
+  
+fig = barplot(rev(ES_all$NES), 
+                horiz = T, 
+                col = ES_all$colour, 
+                names.arg = rev(ES_all$GeneSetName) , 
+                cex.axis = 1.5, cex.names = 1.25)
+
+
+```

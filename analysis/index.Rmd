@@ -8,4 +8,39 @@ editor_options:
   chunk_output_type: console
 ---
 
-Welcome to my research website.
+## Mouse AAV6:Yap-shRNA Bulk RNA-seq and ATAC-seq
+
+This site contains the results of the bulk nuclei RNA-seq and ATAC-seq analyses presented in 
+"Yap regulates skeletal muscle fatty acid oxidation and adiposity in metabolic disease", 
+which has been accepted for publication in *Nature Communications* (9 February 2021). 
+Follow the links below to view the different aspects of the analysis.
+
+## Abstract
+
+Obesity is a major risk factor underlying the development of metabolic disease and a growing public health concern globally. Strategies to promote skeletal muscle metabolism can be effective to limit the progression of metabolic disease. Here, we demonstrate that the levels of YAP are decreased in muscle biopsies from obese, insulin-resistant humans and mice. Targeted disruption of Yap in adult skeletal muscle results in incomplete oxidation of fatty acids and lipotoxicity. Integrated ‘omics analysis from isolated adult muscle nuclei reveals that Yap regulates a transcriptional profile associated with substrate utilisation. In line with these findings, increasing Yap abundance in the striated muscle of obese (db/db) mice enhanced energy expenditure and attenuated adiposity. Our results demonstrate a vital role for Yap in skeletal muscle as a mediator of skeletal muscle metabolism. Strategies to enhance Yap activity in skeletal muscle warrant consideration as part of comprehensive approaches to treat metabolic disease. 
+
+
+## Authors
+
+Watt K.I., Henstridge D.C., Ziemann M., Sim C.B., Montgomery M.K., Samocha-Bonet D., Parker B., Dodd, G.T., Bond S.T., Salmi, T.M., Lee-Young R.S., Thomson R.E., Hagg A., Davey J.R., Qian H., Koopman R., El-Osta A., Greenfield J.R., Watt M.J., Febbraio M.A., Drew B.G., Cox A.G., Porrello E.R., Harvey K.F. and Gregorevic P.
+
+## Analysis
+
+The data analysis consists of a number of steps that are detailed in the scripts 
+listed below.
+
+
+### 1. RNA-seq 
+
+* [Primary analysis of sequencing reads](01.RNAseq_primary_analysis.html)
+* [QC and CPM](02.RNAseq_QC_and_CPM.html)
+* [Differential expression analysis](03.RNAseq_EdgeR_and_ScatterPlot.html)
+
+### 2. ATAC-seq 
+
+* [Primary analysis of sequencing reads](04.ATACseq_primary_analysis.html)
+* [Differential expression analysis](05.ATACseq_EdgeR_and_ScatterPlot.html)
+
+### 3. Proteomics
+
+* [GSEA analysis](06.Proteomic_GSEA.html)

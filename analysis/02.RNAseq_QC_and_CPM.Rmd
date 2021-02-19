@@ -1,0 +1,100 @@
+---
+title: "QC and MDS plot of nuclei RNA-seq"
+author: "Evangelyn Sim"
+date: "2/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+## Introduction
+
+In the GEO submission 1 processed files were uploaded. 
+
+1. mrna_fulllen_pe_strrev.mx.fix_filt
+
+They have been uploaded in the /output folder and will be used below to generate different figures.
+
+
+### Used libraries and functions
+
+```{r}
+library(edgeR)
+library(limma)
+library(Glimma)
+library(gplots)
+
+```
+
+
+# 1. QC
+
+### Count per million reads
+
+```{r}
+
+rm1 <- read.delim("/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/Github/2021_UoM_Yap_shRNA_nuclei_RNAseq_ATACseq/output/mrna_fulllen_pe_strrev.mx.fix_filt", header = TRUE, row.names = 1)
+rm2 = rm1[,c(1:6)]
+
+mycpm = cpm(rm2)
+
+summary(mycpm)
+
+x <- DGEList(rm2)
+
+names(x)
+
+logcountsx = cpm(x, log = T)
+write.csv(logcountsx, file = "/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/Github/2021_UoM_Yap_shRNA_nuclei_RNAseq_ATACseq/output/logCPM_mrna_fulllen_pe_strrev.mx.fix_filt.csv")
+
+```
+
+```{r, fig.height=4, fig.width=8}
+
+par(mfrow=c(1,2))
+
+barplot(x$samples$lib.size, names=colnames(x), las=2, col = "blue", main = "Library size")
+boxplot(logcountsx, xlab="", ylab="Log2 counts per million", las=2, col = "blue")
+abline(h=median(logcountsx), col="navy")
+
+```
+
+
+# 2. MDS plot
+
+### Read files 
+```{r}
+
+sampleinfo = as.data.frame(colnames(rm2))
+colnames(sampleinfo) = c("SampleName")
+sampleinfo$group = gsub(".[0-9]", "", sampleinfo$SampleName)
+
+write.table(sampleinfo, file = "/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/Github/2021_UoM_Yap_shRNA_nuclei_RNAseq_ATACseq/output/sampleinfo.txt", sep = "\t", row.names = F, col.names = T)
+sampleinfo = read.delim("/group/card2/Evangelyn_Sim/Collaboration_Kev_UoM/Sequencing_ATAC_RNA/Github/2021_UoM_Yap_shRNA_nuclei_RNAseq_ATACseq/output/sampleinfo.txt", header = T)
+
+levels(sampleinfo$group)
+sampleinfo$colour = c("blue","red")[sampleinfo$group]
+table(colnames(rm2)==sampleinfo$SampleName)
+
+y <- DGEList(rm2)
+
+```
+
+# Make plot
+
+```{r, fig.height=4,fig.width=7}
+
+par(mfrow=c(1,2))
+
+plotMDS(y, pch=c(0,1)[sampleinfo$group], col=sampleinfo$colour, cex = 1.5)
+legend("topright", legend =levels(sampleinfo$group), pch=c(0,1), col = c("blue","red"), cex=1)
+
+plotMDS(y, cex = 0.8)
+
+
+```
